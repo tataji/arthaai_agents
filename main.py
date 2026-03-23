@@ -13,6 +13,8 @@ import argparse
 import asyncio
 import sys
 from datetime import datetime
+from dotenv import load_dotenv
+load_dotenv()   # load .env before anything else
 
 from rich.console import Console
 from rich.panel import Panel
