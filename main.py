@@ -73,7 +73,7 @@ async def run_agents():
     from agents.orchestrator import Orchestrator
 
     # ── API key check ─────────────────────────────────────────────────────────
-    api_key = "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"
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not api_key:
         console.print("[bold red]ERROR: ANTHROPIC_API_KEY is not set.[/bold red]")
         console.print("[yellow]Add it to your .env file:[/yellow]")
