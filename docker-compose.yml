@@ -1,0 +1,97 @@
+version: "3.9"
+
+services:
+  # ── Streamlit Dashboard ────────────────────────────────────────────────────
+  dashboard:
+    build: .
+    container_name: arthaai-dashboard
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - KITE_API_KEY=${KITE_API_KEY}
+      - KITE_API_SECRET=${KITE_API_SECRET}
+      - KITE_ACCESS_TOKEN=${KITE_ACCESS_TOKEN}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - TRADING_MODE=${TRADING_MODE:-paper}
+      - DATABASE_URL=sqlite:////app/data_store/arthaai.db
+    volumes:
+      - arthaai_data:/app/data_store
+      - arthaai_logs:/app/logs
+      - ./.streamlit:/app/.streamlit:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - arthaai_net
+
+  # ── FastAPI Backend (optional — for React frontend) ────────────────────────
+  api:
+    build: .
+    container_name: arthaai-api
+    restart: unless-stopped
+    command: uvicorn server:app --host 0.0.0.0 --port 8000 --workers 2
+    ports:
+      - "8000:8000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - KITE_API_KEY=${KITE_API_KEY}
+      - KITE_ACCESS_TOKEN=${KITE_ACCESS_TOKEN}
+      - TRADING_MODE=${TRADING_MODE:-paper}
+      - DATABASE_URL=sqlite:////app/data_store/arthaai.db
+    volumes:
+      - arthaai_data:/app/data_store
+    networks:
+      - arthaai_net
+    depends_on:
+      - dashboard
+
+  # ── Agent Worker ──────────────────────────────────────────────────────────
+  agents:
+    build: .
+    container_name: arthaai-agents
+    restart: unless-stopped
+    command: python main.py --mode ${TRADING_MODE:-paper}
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - KITE_API_KEY=${KITE_API_KEY}
+      - KITE_ACCESS_TOKEN=${KITE_ACCESS_TOKEN}
+      - TRADING_MODE=${TRADING_MODE:-paper}
+      - DATABASE_URL=sqlite:////app/data_store/arthaai.db
+    volumes:
+      - arthaai_data:/app/data_store
+      - arthaai_logs:/app/logs
+    networks:
+      - arthaai_net
+    profiles:
+      - agents   # Only starts with: docker compose --profile agents up
+
+  # ── Nginx Reverse Proxy ────────────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: arthaai-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/ssl:/etc/ssl/arthaai:ro
+    depends_on:
+      - dashboard
+    networks:
+      - arthaai_net
+    profiles:
+      - production
+
+volumes:
+  arthaai_data:
+  arthaai_logs:
+
+networks:
+  arthaai_net:
+    driver: bridge

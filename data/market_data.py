@@ -6,7 +6,7 @@ Falls back to yfinance for paper trading / testing
 import os
 import time
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=True)
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Tuple
@@ -219,8 +219,8 @@ class MarketData:
     # ── Market Status ─────────────────────────────────────────────────────────
 
     def is_market_open(self) -> bool:
-        # Set FORCE_MARKET_OPEN=1 in .env to bypass hours check during testing
-        if os.getenv("FORCE_MARKET_OPEN", "0") == "1":
+        # config.FORCE_MARKET_OPEN is set from .env at startup via config.py
+        if config.FORCE_MARKET_OPEN:
             return True
         now = datetime.now()
         if now.weekday() >= 5:    # Saturday/Sunday
@@ -230,8 +230,8 @@ class MarketData:
         return open_t <= now <= close_t
 
     def minutes_to_close(self) -> int:
-        if os.getenv("FORCE_MARKET_OPEN", "0") == "1":
-            return 999   # pretend there is plenty of time left
+        if config.FORCE_MARKET_OPEN:
+            return 999
         now   = datetime.now()
         close = now.replace(hour=15, minute=30, second=0, microsecond=0)
         delta = (close - now).total_seconds() / 60

@@ -6,7 +6,7 @@ All parameters can be overridden via .env
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 
 # ── API Keys ──────────────────────────────────────────────────────────────────
@@ -21,6 +21,10 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///arthaai.db")
+
+# ── Testing flags ─────────────────────────────────────────────────────────────
+FORCE_MARKET_OPEN = os.getenv("FORCE_MARKET_OPEN", "0") == "1"
+FAST_CYCLE        = os.getenv("FAST_CYCLE", "0") == "1"
 
 
 # ── Trading Mode ──────────────────────────────────────────────────────────────
@@ -87,7 +91,7 @@ TA_CONFIG = {
 # In production these run on longer intervals.
 # Set FAST_CYCLE=1 in .env to use short intervals for testing/development.
 import os as _os
-_fast = _os.getenv("FAST_CYCLE", "0") == "1"
+_fast = os.getenv("FAST_CYCLE", "0") == "1"  # read fresh in case _os alias differs
 AGENT_INTERVALS = {
     "orchestrator": 30   if _fast else 300,    # 30s test / 5 min prod
     "technical":    20   if _fast else 180,    # 20s test / 3 min prod
