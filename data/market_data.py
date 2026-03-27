@@ -3,7 +3,10 @@ data/market_data.py — Live market data via Zerodha Kite Connect
 Falls back to yfinance for paper trading / testing
 """
 
+import os
 import time
+from dotenv import load_dotenv
+load_dotenv()
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Tuple

@@ -1,0 +1,51 @@
+# ── Python ─────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+venv/
+env/
+.venv/
+
+# ── Secrets & config ───────────────────────────────────────────────────────
+.env
+.streamlit/secrets.toml
+*.pem
+*.key
+*.crt
+
+# ── Database & data ────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+data_store/
+arthaai.db
+
+# ── Logs ───────────────────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── IDE ────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Node (React frontend) ──────────────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+
+# ── Docker ────────────────────────────────────────────────────────────────
+.dockerignore
+
+# ── Test ─────────────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/

@@ -1,0 +1,28 @@
+# deploy/arthaai-agents.service
+# Copy to: /etc/systemd/system/arthaai-agents.service
+
+[Unit]
+Description=ArthAI Trading Agents Worker
+After=network.target
+ConditionPathExists=/opt/arthaai/.env
+
+[Service]
+Type=simple
+User=arthaai
+Group=arthaai
+WorkingDirectory=/opt/arthaai
+EnvironmentFile=/opt/arthaai/.env
+ExecStart=/opt/arthaai/venv/bin/python main.py --mode paper
+Restart=on-failure
+RestartSec=30
+StartLimitInterval=300
+StartLimitBurst=5
+StandardOutput=append:/var/log/arthaai/agents.log
+StandardError=append:/var/log/arthaai/agents-error.log
+
+# Automatically stop & restart agents after market close
+OnCalendar=Mon-Fri 09:00 IST
+ExecStartPre=/bin/bash -c 'date +%%H:%%M | grep -q "09:0[0-5]" || exit 0'
+
+[Install]
+WantedBy=multi-user.target

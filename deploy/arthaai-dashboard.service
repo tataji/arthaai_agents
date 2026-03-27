@@ -1,0 +1,33 @@
+# deploy/arthaai-dashboard.service
+# Copy to: /etc/systemd/system/arthaai-dashboard.service
+# Enable: sudo systemctl enable arthaai-dashboard
+# Start:  sudo systemctl start arthaai-dashboard
+
+[Unit]
+Description=ArthAI Streamlit Dashboard
+After=network.target
+Wants=arthaai-agents.service
+
+[Service]
+Type=simple
+User=arthaai
+Group=arthaai
+WorkingDirectory=/opt/arthaai
+EnvironmentFile=/opt/arthaai/.env
+ExecStart=/opt/arthaai/venv/bin/streamlit run dashboard/app.py \
+    --server.port=8501 \
+    --server.address=0.0.0.0 \
+    --server.headless=true
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/var/log/arthaai/dashboard.log
+StandardError=append:/var/log/arthaai/dashboard-error.log
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/arthaai /var/log/arthaai
+
+[Install]
+WantedBy=multi-user.target
