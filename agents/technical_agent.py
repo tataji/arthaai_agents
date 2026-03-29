@@ -3,6 +3,7 @@ agents/technical_agent.py — Technical Analysis Agent
 Scans watchlist for technical setups and generates BUY/SELL signals.
 """
 
+import os
 import json
 import asyncio
 from typing import Dict, List, Optional
@@ -23,7 +24,7 @@ class TechnicalAgent:
     """
 
     def __init__(self):
-        self.client  = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+        self.client  = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY') or config.ANTHROPIC_API_KEY)
         self.signals: Dict[str, Dict] = {}
 
     # ── Main scan loop ────────────────────────────────────────────────────────
@@ -124,7 +125,7 @@ class TechnicalAgent:
     async def _claude_analyse(
         self, symbol: str, daily: Dict, hourly: Dict, momentum: float
     ) -> Optional[Dict]:
-        """Ask Claude to make the final trade decision based on indicators."""
+        """Ask Claude to make the final trade decision. Falls back to rule-based if API unavailable."""
         prompt = f"""Analyse {symbol} (NSE) and provide a trade decision.
 
 DAILY INDICATORS:
@@ -159,7 +160,6 @@ Risk params: SL max 2%, R:R minimum 1:1.5.
                 messages=[{"role": "user", "content": prompt}],
             )
             raw = response.content[0].text.strip()
-            # Strip markdown if present
             raw = raw.replace("```json", "").replace("```", "").strip()
             decision = json.loads(raw)
             return {
@@ -176,8 +176,71 @@ Risk params: SL max 2%, R:R minimum 1:1.5.
             logger.error(f"Claude JSON parse error for {symbol}: {e}")
             return None
         except Exception as e:
-            logger.error(f"Claude API error for {symbol}: {e}")
-            return None
+            # 400 = low credits / bad request, 401 = bad key — fall back to rules
+            logger.warning(f"Claude unavailable for {symbol} ({e}) — using rule-based signal")
+            return self._rule_based_signal(symbol, daily, momentum)
+
+    def _rule_based_signal(self, symbol: str, sig: Dict, momentum: float) -> Dict:
+        """
+        Pure rule-based signal when Claude API is unavailable.
+        Uses RSI + EMA trend + MACD + volume to generate BUY/SELL/HOLD.
+        """
+        close  = sig["close"]
+        atr    = sig["atr"] or close * 0.015
+        action = "HOLD"
+        confidence = 0.50
+        reasons = []
+
+        # BUY conditions
+        buy_score = 0
+        if sig["rsi"] > 50:                          buy_score += 1; reasons.append(f"RSI {sig['rsi']:.0f}>50")
+        if sig["ema_trend"] == "bullish":             buy_score += 2; reasons.append("EMA bullish")
+        if sig["macd_hist"] > 0:                     buy_score += 1; reasons.append("MACD+")
+        if sig["macd_cross"] == "bullish":            buy_score += 1; reasons.append("MACD cross↑")
+        if sig["vol_ratio"] > 1.3:                   buy_score += 1; reasons.append(f"Vol {sig['vol_ratio']:.1f}x")
+        if sig["above_vwap"]:                        buy_score += 1; reasons.append("above VWAP")
+        if sig["long_term_trend"] == "bullish":      buy_score += 1; reasons.append("above 200EMA")
+        if sig["bb_position"] == "below_lower":      buy_score += 1; reasons.append("BB oversold")
+
+        # SELL conditions
+        sell_score = 0
+        if sig["rsi"] < 50:                          sell_score += 1
+        if sig["ema_trend"] == "bearish":            sell_score += 2
+        if sig["macd_hist"] < 0:                     sell_score += 1
+        if sig["macd_cross"] == "bearish":           sell_score += 1
+        if not sig["above_vwap"]:                    sell_score += 1
+        if sig["long_term_trend"] == "bearish":      sell_score += 1
+        if sig["bb_position"] == "above_upper":      sell_score += 1
+
+        if buy_score >= 4 and buy_score > sell_score:
+            action     = "BUY"
+            confidence = min(0.50 + buy_score * 0.06, 0.85)
+            entry      = close
+            stop_loss  = round(entry - 1.5 * atr, 2)
+            target     = round(entry + 2.5 * atr, 2)
+            rationale  = f"Rule-based BUY: {', '.join(reasons)}"
+        elif sell_score >= 4 and sell_score > buy_score:
+            action     = "SELL"
+            confidence = min(0.50 + sell_score * 0.06, 0.85)
+            entry      = close
+            stop_loss  = round(entry + 1.5 * atr, 2)
+            target     = round(entry - 2.5 * atr, 2)
+            rationale  = f"Rule-based SELL: bearish alignment"
+        else:
+            return {"action": "HOLD", "confidence": 0.40, "entry": close,
+                    "stop_loss": 0, "target": 0, "quantity": 0,
+                    "rationale": "Rule-based: no clear setup", "timeframe": "intraday"}
+
+        return {
+            "action":    action,
+            "confidence": round(confidence, 2),
+            "entry":     close,
+            "stop_loss": stop_loss,
+            "target":    target,
+            "quantity":  max(1, int(50000 / close)),
+            "rationale": rationale,
+            "timeframe": "intraday",
+        }
 
     def get_top_signals(self, n: int = 5) -> List[Dict]:
         """Return top N signals sorted by confidence, excluding HOLDs."""

@@ -9,8 +9,7 @@ Usage:
 import os
 import webbrowser
 from dotenv import load_dotenv, set_key
-
-load_dotenv()
+load_dotenv(override=True)
 
 try:
     from kiteconnect import KiteConnect

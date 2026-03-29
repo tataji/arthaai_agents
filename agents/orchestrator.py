@@ -5,6 +5,7 @@ This is the brain of the system.
 """
 
 import asyncio
+import os
 import json
 import time
 from datetime import datetime, timedelta
@@ -43,7 +44,7 @@ class Orchestrator:
     """
 
     def __init__(self):
-        self.client      = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+        self.client      = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY') or config.ANTHROPIC_API_KEY)
         self.technical   = TechnicalAgent()
         self.news        = NewsAgent()
         self.fundamental = FundamentalAgent()
@@ -236,8 +237,11 @@ Return JSON array of approved symbols: ["SYMBOL1", "SYMBOL2"] or empty [] if non
             log_agent("Orchestrator", f"Claude approved: {approved}")
             return [o for o in opportunities if o["symbol"] in approved]
         except Exception as e:
-            logger.error(f"Meta-decision error: {e}")
-            # Fallback: take top 2 by confidence
+            err = str(e)
+            if "credit balance" in err or "400" in err or "401" in err:
+                logger.warning("Claude unavailable (billing/auth) — using top-2 rule-based signals")
+            else:
+                logger.error(f"Meta-decision error: {e}")
             return opportunities[:2]
 
     # ── Trade execution ───────────────────────────────────────────────────────

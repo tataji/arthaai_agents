@@ -167,7 +167,11 @@ Rules:
             logger.error(f"News JSON parse error: {e}")
             return {}
         except Exception as e:
-            logger.error(f"News analysis error: {e}")
+            err = str(e)
+            if "credit balance" in err or "400" in err or "401" in err:
+                logger.warning("Claude API unavailable (billing/auth) — skipping news sentiment")
+            else:
+                logger.error(f"News analysis error: {e}")
             return {}
 
     # ── Quick single-headline analysis ───────────────────────────────────────
