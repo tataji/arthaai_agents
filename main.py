@@ -2,49 +2,57 @@
 main.py — ArthAI Entry Point
 
 Usage:
-  python main.py --mode paper                    # Paper trading
-  python main.py --mode paper --force-market     # Paper + bypass market hours (testing)
-  python main.py --mode paper --fast             # Paper + short cycle intervals (testing)
-  python main.py --mode live                     # Live trading (real money)
-  python main.py --server                        # Start API server
-  python main.py --analyse RELIANCE              # Quick stock analysis
+  python main.py --mode paper --force-market --fast --api-key sk-ant-...
+  python main.py --mode paper
+  python main.py --mode live
+  python main.py --server
+  python main.py --analyse RELIANCE
 """
 
-# ── Step 1: parse CLI flags BEFORE any other import ──────────────────────────
 import sys
 import os
 import argparse
 
 def _early_parse():
-    """Minimal arg parse before dotenv/config loads — sets os.environ directly."""
     p = argparse.ArgumentParser(add_help=False)
     p.add_argument("--mode",         default="paper", choices=["paper", "live"])
-    p.add_argument("--force-market", action="store_true",
-                   help="Bypass market-hours check (for testing outside 9:15-15:30)")
-    p.add_argument("--fast",         action="store_true",
-                   help="Use short agent cycle intervals (30s) for testing")
+    p.add_argument("--force-market", action="store_true")
+    p.add_argument("--fast",         action="store_true")
     p.add_argument("--server",       action="store_true")
     p.add_argument("--analyse",      default="")
+    p.add_argument("--api-key",      default="",
+                   help="Anthropic API key (overrides .env)")
     args, _ = p.parse_known_args()
 
-    # Write directly into os.environ so every subsequent import sees the values
     os.environ["TRADING_MODE"] = args.mode
     if args.force_market:
         os.environ["FORCE_MARKET_OPEN"] = "1"
     if args.fast:
         os.environ["FAST_CYCLE"] = "1"
+    if args.api_key:
+        os.environ["ANTHROPIC_API_KEY"] = args.api_key
     return args
 
-_early_args = _early_parse()
+_args = _early_parse()
 
-# ── Step 2: load .env (will not override values already set above) ────────────
+# Load .env AFTER CLI flags (CLI takes priority)
 from dotenv import load_dotenv
-load_dotenv()   # CLI flags take priority; .env fills in everything else
+load_dotenv()
 
-# ── Step 3: now safe to import everything else ────────────────────────────────
+# If key still missing, try reading .env manually as a fallback
+if not os.environ.get("ANTHROPIC_API_KEY"):
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if os.path.exists(env_path):
+        for line in open(env_path):
+            line = line.strip()
+            if line.startswith("ANTHROPIC_API_KEY="):
+                key = line.split("=", 1)[1].strip().strip('"').strip("'")
+                if key:
+                    os.environ["ANTHROPIC_API_KEY"] = key
+                break
+
 import asyncio
 from datetime import datetime
-
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
@@ -59,33 +67,26 @@ def print_banner():
     text.append("  NSE & BSE | Powered by Claude AI + Zerodha Kite\n", style="dim")
     text.append(f"  {datetime.now().strftime('%d %b %Y  %H:%M IST')}", style="dim")
     console.print(Panel(text, border_style="green", padding=(1, 2)))
-
-    # Show active test flags
     if os.environ.get("FORCE_MARKET_OPEN") == "1":
-        console.print("[yellow]  ⚠  --force-market active: market-hours check bypassed[/yellow]")
+        console.print("[yellow]  ⚠  --force-market active: bypassing market hours[/yellow]")
     if os.environ.get("FAST_CYCLE") == "1":
-        console.print("[yellow]  ⚠  --fast active: agent cycles every 30s[/yellow]")
+        console.print("[yellow]  ⚠  --fast active: 30s agent cycles[/yellow]")
 
 
 async def run_agents():
-    # Import config AFTER os.environ is populated
     import config
     from agents.orchestrator import Orchestrator
 
-    # ── API key check ─────────────────────────────────────────────────────────
     api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not api_key:
-        console.print("[bold red]ERROR: ANTHROPIC_API_KEY is not set.[/bold red]")
-        console.print("[yellow]Add it to your .env file:[/yellow]")
-        console.print("  ANTHROPIC_API_KEY=sk-ant-...")
-        console.print("[yellow]Or pass it inline:[/yellow]")
-        console.print("  [bold]set ANTHROPIC_API_KEY=sk-ant-...  && python main.py --mode paper --force-market --fast[/bold]")
+        console.print("[bold red]✗ ANTHROPIC_API_KEY not found.[/bold red]")
+        console.print("[yellow]Pass it via CLI:[/yellow]")
+        console.print("  [bold]python main.py --mode paper --force-market --fast --api-key sk-ant-...[/bold]")
         return
+
     console.print(f"[green]Starting agents in {config.TRADING_MODE.upper()} mode...[/green]")
-    console.print(f"[dim]  FORCE_MARKET_OPEN = {config.FORCE_MARKET_OPEN}[/dim]")
-    console.print(f"[dim]  FAST_CYCLE        = {config.FAST_CYCLE}[/dim]")
-    console.print(f"[dim]  API key           = {api_key[:12]}...{api_key[-4:]}[/dim]")
-    console.print(f"[dim]  Orchestrator interval = {config.AGENT_INTERVALS['orchestrator']}s[/dim]")
+    console.print(f"[dim]  API key: {api_key[:16]}...{api_key[-4:]}[/dim]")
+    console.print(f"[dim]  Cycle:   {config.AGENT_INTERVALS['orchestrator']}s[/dim]")
 
     orch = Orchestrator()
     await orch.run_forever()
@@ -95,7 +96,7 @@ def run_server():
     import uvicorn
     from data.database import init_db
     init_db()
-    console.print("[green]Starting API server on http://localhost:8000[/green]")
+    console.print("[green]Starting API server → http://localhost:8000[/green]")
     uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=False)
 
 
@@ -126,15 +127,12 @@ def run_analyse(symbol: str):
 
 def main():
     print_banner()
-
-    if _early_args.analyse:
-        run_analyse(_early_args.analyse.upper())
+    if _args.analyse:
+        run_analyse(_args.analyse.upper())
         return
-
-    if _early_args.server:
+    if _args.server:
         run_server()
         return
-
     try:
         asyncio.run(run_agents())
     except KeyboardInterrupt:
